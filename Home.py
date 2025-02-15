@@ -11,8 +11,17 @@ import chess.svg
 # Load environment variables and system prompt
 load_dotenv()
 
-with open('prompt/system.md', 'r') as file:
-    SYSTEM_PROMPT = file.read()
+try:
+    with open('prompt/system.md', 'r', encoding='utf-8') as file:
+        SYSTEM_PROMPT = file.read()
+except Exception as e:
+    st.error(f"Error loading system prompt: {e}")
+    SYSTEM_PROMPT = """You are a witty chess assistant playing a game against the user. You are playing as White. You should:
+    1. Make chess-related puns and jokes while playing
+    2. Keep track of the game state and respond with valid moves
+    3. Explain your moves in a fun and entertaining way
+    4. Use casual language and occasional emojis
+    5. Always format your move clearly at the start of your response"""
 
 # Available models
 MODELS = {
@@ -79,12 +88,23 @@ st.title("Chess AI Agent")
 # Initialize session state
 if 'messages' not in st.session_state:
     st.session_state.messages = []
+    # Add initial message
+    init_message = "You have whites. What is your first move?"
+    st.session_state.messages.append({"role": "user", "content": init_message})
 if 'openai_client' not in st.session_state:
     st.session_state.openai_client = init_openai()
 if 'board' not in st.session_state:
     st.session_state.board = chess.Board()
 if 'selected_model' not in st.session_state:
     st.session_state.selected_model = MODELS["GPT-4 Optimized Mini"]  # Default model
+    # Get initial AI response
+    if len(st.session_state.messages) == 1:  # Only user's initial message exists
+        response = get_chat_response(
+            st.session_state.openai_client,
+            st.session_state.messages,
+            st.session_state.board
+        )
+        st.session_state.messages.append({"role": "assistant", "content": response})
 
 # Sidebar
 with st.sidebar:
@@ -106,6 +126,12 @@ with st.sidebar:
         st.json(game_history)
     else:
         st.write("No moves yet")
+    
+    # Move reset button to sidebar
+    if st.button("Reset Game"):
+        st.session_state.board = chess.Board()
+        st.session_state.messages = []
+        st.rerun()
 
 # Display current board state
 board_svg = chess.svg.board(board=st.session_state.board)
@@ -115,10 +141,21 @@ st.caption(f"Current position: {st.session_state.board.fen()}")
 # Chat interface
 st.subheader("Game Progress")
 
-# User input
-user_input = st.text_input("Enter your move:", key="user_input")
+# Display chat history
+for i, msg in enumerate(st.session_state.messages):
+    message(
+        msg["content"],
+        is_user=(msg["role"] == "user"),
+        key=f"msg_{i}"
+    )
 
-if user_input:
+# User input at the bottom
+user_input = st.text_input("Your move:", key="user_input")
+
+if user_input and user_input != st.session_state.get('last_input', ''):
+    # Store current input to prevent duplicate processing
+    st.session_state.last_input = user_input
+    
     # Add user message to chat
     st.session_state.messages.append({"role": "user", "content": f"I play: {user_input}"})
     
@@ -135,15 +172,5 @@ if user_input:
     # Save game state
     save_game_state(st.session_state.messages, st.session_state.board)
     
-    # Clear input
-    st.session_state.user_input = ""
-
-# Display chat history
-for i, msg in enumerate(st.session_state.messages):
-    message(msg["content"], is_user=(msg["role"] == "user"), key=f"msg_{i}")
-
-# Add a reset button
-if st.button("Reset Game"):
-    st.session_state.board = chess.Board()
-    st.session_state.messages = []
-    st.experimental_rerun()
+    # Rerun to update the display
+    st.rerun()
