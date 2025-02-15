@@ -76,6 +76,16 @@ def get_chat_response(client, messages, board):
 # Initialize the Streamlit interface
 st.title("Chess AI Agent")
 
+# Initialize session state
+if 'messages' not in st.session_state:
+    st.session_state.messages = []
+if 'openai_client' not in st.session_state:
+    st.session_state.openai_client = init_openai()
+if 'board' not in st.session_state:
+    st.session_state.board = chess.Board()
+if 'selected_model' not in st.session_state:
+    st.session_state.selected_model = MODELS["GPT-4 Optimized Mini"]  # Default model
+
 # Sidebar
 with st.sidebar:
     st.header("Settings")
@@ -96,23 +106,6 @@ with st.sidebar:
         st.json(game_history)
     else:
         st.write("No moves yet")
-
-# Initialize session state
-if 'messages' not in st.session_state:
-    st.session_state.messages = []
-if 'openai_client' not in st.session_state:
-    st.session_state.openai_client = init_openai()
-if 'board' not in st.session_state:
-    st.session_state.board = chess.Board()
-    # Initialize the conversation with the first prompt
-    init_message = "You have whites. What is your first move?"
-    st.session_state.messages.append({"role": "user", "content": init_message})
-    response = get_chat_response(
-        st.session_state.openai_client,
-        st.session_state.messages,
-        st.session_state.board
-    )
-    st.session_state.messages.append({"role": "assistant", "content": response})
 
 # Display current board state
 board_svg = chess.svg.board(board=st.session_state.board)
