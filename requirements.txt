@@ -4,3 +4,6 @@ python-chess
 openai
 python-dotenv
 Pillow
+faiss-cpu
+sentence-transformers
+torch
