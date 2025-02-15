@@ -1,16 +1,24 @@
 import streamlit as st
-from stchess import board
-import chess
-import chess.engine
 from openai import OpenAI
 from streamlit_chat import message
-import json
-from datetime import datetime
 from dotenv import load_dotenv
 import os
+import json
+from datetime import datetime
+import chess
+import chess.svg
 
-# Load environment variables
+# Load environment variables and system prompt
 load_dotenv()
+
+with open('prompt/system.md', 'r') as file:
+    SYSTEM_PROMPT = file.read()
+
+# Available models
+MODELS = {
+    "GPT-4 Optimized Mini": "gpt-4o-mini",
+    "GPT-4 Optimized": "gpt-4o"
+}
 
 # Initialize OpenAI client
 def init_openai():
@@ -20,188 +28,129 @@ def init_openai():
         st.stop()
     return OpenAI(api_key=api_key)
 
-# AI personalities for commentary
-AI_PERSONALITIES = {
-    "Grandmaster": "You are a chess grandmaster providing deep strategic analysis. Focus on long-term plans and positional understanding.",
-    "Coach": "You are a friendly chess coach. Explain ideas simply and point out learning opportunities.",
-    "Aggressive Player": "You are an attacking player who loves sacrifices. Focus on tactical opportunities and attacking chances.",
-    "Defensive Expert": "You are a defensive specialist. Focus on prophylaxis and maintaining solid positions."
-}
+def save_game_state(messages, board):
+    """Save game state to a JSON file"""
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    game_state = {
+        "messages": messages,
+        "board_fen": board.fen(),
+        "timestamp": timestamp
+    }
+    
+    # Create data directory if it doesn't exist
+    os.makedirs("data", exist_ok=True)
+    
+    filename = f"data/session_{timestamp}.json"
+    with open(filename, 'w') as f:
+        json.dump(game_state, f)
+    return filename
 
-def get_position_analysis(fen):
-    """Generate a position analysis prompt for the AI"""
-    return f"""Analyze this chess position (FEN: {fen}). Consider:
-1. Material balance
-2. Piece activity
-3. Pawn structure
-4. King safety
-5. Potential plans for both sides
-Provide a concise but insightful analysis."""
-
-def get_chat_response(client, messages, personality="Grandmaster"):
-    """Get response from OpenAI with selected personality"""
-    system_message = {"role": "system", "content": AI_PERSONALITIES[personality]}
-    full_messages = [system_message] + messages
+def get_chat_response(client, messages, board):
+    """Get response from OpenAI with game context"""
+    system_message = {
+        "role": "system", 
+        "content": SYSTEM_PROMPT
+    }
+    
+    # Create game history context
+    game_history = {
+        "board_state": board.fen(),
+        "moves": [msg["content"] for msg in messages]
+    }
+    
+    # Create context message
+    context_message = {
+        "role": "user",
+        "content": f"This is the game history: {json.dumps(game_history, indent=2)}"
+    }
+    
+    full_messages = [system_message, context_message] + messages
     
     response = client.chat.completions.create(
-        model="gpt-4",
+        model=st.session_state.selected_model,
         messages=full_messages,
-        temperature=0.7,
-        max_tokens=150
+        temperature=0.1
     )
     return response.choices[0].message.content
 
-def save_game(board, messages):
-    """Save the current game state to a file"""
-    game_data = {
-        "fen": board.fen(),
-        "pgn": str(board),
-        "messages": messages,
-        "timestamp": datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    }
-    return json.dumps(game_data)
-
-def load_game(game_data):
-    """Load a game from saved data"""
-    data = json.loads(game_data)
-    board = chess.Board(data["fen"])
-    return board, data["messages"]
-
-def get_move_history(board):
-    """Generate a formatted move history"""
-    moves = []
-    for i, move in enumerate(board.move_stack):
-        if i % 2 == 0:
-            moves.append(f"{i//2 + 1}. {board.san(move)}")
-        else:
-            moves[-1] += f" {board.san(move)}"
-    return " ".join(moves)
-
 # Initialize the Streamlit interface
-st.title("Enhanced Chess Assistant")
+st.title("Chess AI Agent")
+
+# Sidebar
+with st.sidebar:
+    st.header("Settings")
+    selected_model = st.selectbox(
+        "Select Model",
+        list(MODELS.keys()),
+        index=0  # Default to first model (gpt-4o-mini)
+    )
+    st.session_state.selected_model = MODELS[selected_model]
+    
+    # Display game history
+    st.header("Game History")
+    if st.session_state.messages:
+        game_history = {
+            "board_state": st.session_state.board.fen(),
+            "moves": [msg["content"] for msg in st.session_state.messages]
+        }
+        st.json(game_history)
+    else:
+        st.write("No moves yet")
 
 # Initialize session state
-if 'board' not in st.session_state:
-    st.session_state.board = chess.Board()
 if 'messages' not in st.session_state:
     st.session_state.messages = []
 if 'openai_client' not in st.session_state:
     st.session_state.openai_client = init_openai()
-if 'fen' not in st.session_state:
-    st.session_state.fen = st.session_state.board.fen()
-if 'personality' not in st.session_state:
-    st.session_state.personality = "Grandmaster"
+if 'board' not in st.session_state:
+    st.session_state.board = chess.Board()
+    # Initialize the conversation with the first prompt
+    init_message = "You have whites. What is your first move?"
+    st.session_state.messages.append({"role": "user", "content": init_message})
+    response = get_chat_response(
+        st.session_state.openai_client,
+        st.session_state.messages,
+        st.session_state.board
+    )
+    st.session_state.messages.append({"role": "assistant", "content": response})
 
-# Sidebar for controls and info
-with st.sidebar:
-    st.subheader("Game Controls")
+# Display current board state
+board_svg = chess.svg.board(board=st.session_state.board)
+st.write(f'<div style="width: 600px; margin: auto;">{board_svg}</div>', unsafe_allow_html=True)
+st.caption(f"Current position: {st.session_state.board.fen()}")
+
+# Chat interface
+st.subheader("Game Progress")
+
+# User input
+user_input = st.text_input("Enter your move:", key="user_input")
+
+if user_input:
+    # Add user message to chat
+    st.session_state.messages.append({"role": "user", "content": f"I play: {user_input}"})
     
-    # AI Personality selector
-    st.session_state.personality = st.selectbox(
-        "Select AI Personality",
-        list(AI_PERSONALITIES.keys())
+    # Get AI response
+    response = get_chat_response(
+        st.session_state.openai_client,
+        st.session_state.messages,
+        st.session_state.board
     )
     
-    # Save/Load game
-    if st.button("Save Game"):
-        game_data = save_game(st.session_state.board, st.session_state.messages)
-        st.download_button(
-            "Download Game",
-            game_data,
-            file_name=f"chess_game_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-            mime="application/json"
-        )
+    # Add AI response to chat
+    st.session_state.messages.append({"role": "assistant", "content": response})
     
-    uploaded_file = st.file_uploader("Load Game", type="json")
-    if uploaded_file is not None:
-        game_data = uploaded_file.read().decode()
-        st.session_state.board, st.session_state.messages = load_game(game_data)
-        st.session_state.fen = st.session_state.board.fen()
-        st.experimental_rerun()
+    # Save game state
+    save_game_state(st.session_state.messages, st.session_state.board)
     
-    # Move history
-    st.subheader("Move History")
-    st.text(get_move_history(st.session_state.board))
+    # Clear input
+    st.session_state.user_input = ""
 
-# Main board and chat area
-col1, col2 = st.columns([2, 1])
-
-with col1:
-    # Interactive chess board using stchess
-    board_result = board(
-        color="white",  # Default to white perspective
-        fen=st.session_state.fen,
-        key="board"
-    )
-    
-    # Handle moves
-    if board_result and 'move' in board_result:
-        try:
-            move = board_result['move']
-            chess_move = chess.Move.from_uci(move)
-            
-            if chess_move in st.session_state.board.legal_moves:
-                st.session_state.board.push(chess_move)
-                st.session_state.fen = st.session_state.board.fen()
-                
-                # Get position analysis
-                analysis_prompt = get_position_analysis(st.session_state.fen)
-                st.session_state.messages.append(
-                    {"role": "user", "content": f"I played {move}. {analysis_prompt}"}
-                )
-                
-                # Get AI response with current personality
-                response = get_chat_response(
-                    st.session_state.openai_client,
-                    st.session_state.messages,
-                    st.session_state.personality
-                )
-                st.session_state.messages.append(
-                    {"role": "assistant", "content": response}
-                )
-                
-                st.experimental_rerun()
-            else:
-                st.error("Invalid move! Please try again.")
-        except ValueError:
-            st.error("Invalid move format! Please try again.")
-
-with col2:
-    # Game status
-    if st.session_state.board.is_checkmate():
-        st.success("Checkmate!")
-    elif st.session_state.board.is_stalemate():
-        st.info("Stalemate!")
-    elif st.session_state.board.is_check():
-        st.warning("Check!")
-    
-    # Position info
-    st.subheader("Position Information")
-    material_count = {
-        'P': len(st.session_state.board.pieces(chess.PAWN, chess.WHITE)),
-        'p': len(st.session_state.board.pieces(chess.PAWN, chess.BLACK)),
-        'N': len(st.session_state.board.pieces(chess.KNIGHT, chess.WHITE)),
-        'n': len(st.session_state.board.pieces(chess.KNIGHT, chess.BLACK)),
-        'B': len(st.session_state.board.pieces(chess.BISHOP, chess.WHITE)),
-        'b': len(st.session_state.board.pieces(chess.BISHOP, chess.BLACK)),
-        'R': len(st.session_state.board.pieces(chess.ROOK, chess.WHITE)),
-        'r': len(st.session_state.board.pieces(chess.ROOK, chess.BLACK)),
-        'Q': len(st.session_state.board.pieces(chess.QUEEN, chess.WHITE)),
-        'q': len(st.session_state.board.pieces(chess.QUEEN, chess.BLACK))
-    }
-    st.write("Material Balance:", material_count)
-    
-    # Reset button
-    if st.button("Reset Game"):
-        st.session_state.board = chess.Board()
-        st.session_state.fen = st.session_state.board.fen()
-        st.session_state.messages = []
-        st.experimental_rerun()
-
-# Chat history
-st.subheader("Analysis & Commentary")
+# Display chat history
 for i, msg in enumerate(st.session_state.messages):
-    if msg["role"] == "user":
-        message(msg["content"], is_user=True, key=f"msg_{i}")
-    else:
-        message(msg["content"], is_user=False, key=f"msg_{i}")
+    message(msg["content"], is_user=(msg["role"] == "user"), key=f"msg_{i}")
+
+# Add a reset button
+if st.button("Reset Game"):
+    st.session_state.board = chess.Board()
+    st.session_state.messages = []
+    st.experimental_rerun()

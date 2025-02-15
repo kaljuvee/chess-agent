@@ -1,7 +1,6 @@
 streamlit
-stchess
 streamlit-chat
 python-chess
 openai
-Pillow
 python-dotenv
+Pillow
