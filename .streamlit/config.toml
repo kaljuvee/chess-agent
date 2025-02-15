@@ -1,0 +1,30 @@
+[theme]
+primaryColor = "#91B7C7"  # Chess-like blue
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F0F2F6"
+textColor = "#262730"
+font = "sans serif"
+
+[server]
+enableXsrfProtection = true
+enableCORS = false
+
+[browser]
+gatherUsageStats = false
+
+[deprecation]
+showfileUploaderEncoding = false
+
+[logger]
+level = "info"
+
+[runner]
+magicEnabled = true
+fastRerenderEnabled = true
+
+[client]
+toolbarMode = "minimal"
+showErrorDetails = false
+
+[global]
+developmentMode = false
