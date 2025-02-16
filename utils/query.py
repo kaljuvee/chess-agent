@@ -54,19 +54,27 @@ def search_games(query: str, client: OpenAI = None, num_results: int = 5, datase
             msg = "Error: OPENAI_API_KEY environment variable not set"
             return msg if return_str else print(msg)
 
-    # Load metadata
+    # Load metadata - add debug logging
     all_metadata = load_all_metadata()
     if not all_metadata:
-        msg = "No embeddings found. Please run create_index.py first."
+        # Add more specific error message
+        msg = "No metadata found in embeddings directory. Files found: " + str(os.listdir('embeddings'))
         return msg if return_str else print(msg)
     
-    # Use specified dataset or first available
-    metadata = next((m for m in all_metadata if m['dataset_id'] == dataset_id), all_metadata[0])
+    # Use specified dataset or first available - add debug logging
+    metadata = next((m for m in all_metadata if m['dataset_id'] == dataset_id), all_metadata[0] if all_metadata else None)
+    if not metadata:
+        msg = f"No dataset found matching ID: {dataset_id}. Available datasets: {[m.get('dataset_id') for m in all_metadata]}"
+        return msg if return_str else print(msg)
     
-    # Load embeddings and index
-    embeddings, index, processed_documents, model_name = load_embeddings_and_index(metadata)
-    if not all([embeddings, index, processed_documents, model_name]):
-        msg = "Failed to load embeddings. Please check the embeddings directory."
+    # Load embeddings and index - add debug logging
+    try:
+        embeddings, index, processed_documents, model_name = load_embeddings_and_index(metadata)
+        if not all([embeddings, index, processed_documents, model_name]):
+            msg = f"Failed to load embeddings for dataset {metadata.get('dataset_id')}. Please check the embeddings directory and file paths in metadata."
+            return msg if return_str else print(msg)
+    except Exception as e:
+        msg = f"Error loading embeddings: {str(e)}"
         return msg if return_str else print(msg)
     
     if not return_str:

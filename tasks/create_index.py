@@ -155,27 +155,52 @@ def create_faiss_index(embeddings: np.ndarray):
     return index
 
 def save_metadata(embedding_model, index_id):
+    """Save metadata with consistent filename format"""
     metadata = {
+        "dataset_id": index_id,  # Add dataset_id field
         "embedding_model": embedding_model,
         "index_id": index_id,
-        "creation_date": datetime.now().isoformat()
+        "creation_date": datetime.now().isoformat(),
+        # Add file paths to help with loading
+        "files": {
+            "embeddings": f"embeddings/embeddings_{index_id}.pkl",
+            "index": f"embeddings/index_{index_id}.bin",
+            "documents": f"embeddings/processed_documents_{index_id}.pkl"
+        }
     }
-    with open(f'embeddings/metadata_{index_id}.json', 'w') as f:
-        json.dump(metadata, f)
+    
+    # Use consistent metadata filename format
+    metadata_path = f'embeddings/metadata_{index_id}.json'
+    with open(metadata_path, 'w') as f:
+        json.dump(metadata, f, indent=2)
+    print(f"Saved metadata to {metadata_path}")
 
 def save_embeddings_and_index(embeddings, index, processed_documents, embedding_model):
+    """Save embeddings, index, and documents with consistent naming"""
     os.makedirs('embeddings', exist_ok=True)
     index_id = str(uuid.uuid4())
     
-    with open(f'embeddings/embeddings_{index_id}.pkl', 'wb') as f:
+    # Save embeddings
+    embeddings_path = f'embeddings/embeddings_{index_id}.pkl'
+    with open(embeddings_path, 'wb') as f:
         pickle.dump(embeddings, f)
-    faiss.write_index(index, f'embeddings/index_{index_id}.bin')
-    with open(f'embeddings/processed_documents_{index_id}.pkl', 'wb') as f:
-        pickle.dump(processed_documents, f)
+    print(f"Saved embeddings to {embeddings_path}")
     
+    # Save index
+    index_path = f'embeddings/index_{index_id}.bin'
+    faiss.write_index(index, index_path)
+    print(f"Saved index to {index_path}")
+    
+    # Save processed documents
+    documents_path = f'embeddings/processed_documents_{index_id}.pkl'
+    with open(documents_path, 'wb') as f:
+        pickle.dump(processed_documents, f)
+    print(f"Saved processed documents to {documents_path}")
+    
+    # Save metadata
     save_metadata(embedding_model, index_id)
-    print(f"Embeddings and index saved successfully!")
-    print(f"Index ID: {index_id}")
+    
+    print(f"All files saved successfully with index ID: {index_id}")
     return index_id
 
 def main():
