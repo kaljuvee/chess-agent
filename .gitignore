@@ -6,6 +6,10 @@ __pycache__/
 # C extensions
 *.so
 
+# pgn files
+*.pgn
+embeddings/
+
 # Distribution / packaging
 .Python
 build/
